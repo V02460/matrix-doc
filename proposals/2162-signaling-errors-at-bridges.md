@@ -35,18 +35,6 @@ to establish the relation to the event its delivery it is marking as failed.
 There is no need for a new endpoint as the existing `/send` endpoint will be
 utilized.
 
-Additional information contained in the event are the name of the bridged
-network (e.g. “Discord” or “Telegram”) and a regex array¹ describing the
-affected users (e.g. `@discord_.*:example.org`). This regex array should be
-similar to the one any Application Service uses for marking its reserved user
-namespace. By providing this information clients can inform their users who in
-the room was affected by the error and for which network the error occurred.
-
-*Those two fields will not be required if the variant with [MSC 1410: Rich
-Bridging](https://github.com/matrix-org/matrix-doc/issues/1410) is adopted. In
-this case the same information is stored alongside other bridge metadata in the
-room state*
-
 There are some common reasons why an error occurred. These are encoded in the
 `reason` attribute and can contain the following types:
 
@@ -107,8 +95,6 @@ This is an example of how the new bridge error might look:
 {
     "type": "m.bridge_error",
     "content": {
-        "network: "Discord",
-        "affected_users": ["@discord_.*:example.org"],
         "reason": "m.bridge_unavailable",
         "time_to_permanent": 900,
         "m.relationship": {
@@ -118,9 +104,6 @@ This is an example of how the new bridge error might look:
     }
 }
 ```
-
-\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\
-¹ Or similar – see [Security Considerations](#security-considerations)
 
 ### Retries and error revocation
 
@@ -288,13 +271,6 @@ itself (maybe under load), there might be an argument that responding to failed
 messages increases the pressure.
 
 ## Security considerations
-
-Sending a custom regex with an event might open the doors for attacking a
-homeserver and/or a client by exposing a direct pathway to the complex code of a
-regex parser. Additionally sending arbitrary complex regexes might make Matrix
-more vulnerable to DoS attacks. To mitigate these risks it might be sensible to
-only allow a more restricted subset of regular expressions by e.g. requiring a
-maximal length or falling back to simple globbing.
 
 When utilizing power levels instead of building on [MSC 1410: Rich
 Bridging](https://github.com/matrix-org/matrix-doc/issues/1410) a malicious user
