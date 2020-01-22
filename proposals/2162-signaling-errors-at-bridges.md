@@ -2,17 +2,14 @@
 
 Sometimes bridges just silently swallow messages and other events. This proposal
 enables bridges to communicate that something went wrong and gives clients the
-option to give feedback to their users. Clients are given the possibility to
-retry a failed event and bridges can signal the success of the retry.
+option to give feedback to their users.
 
 ## Proposal
 
 Bridges might come into a situation where there is nothing more they can do to
 successfully deliver an event to the foreign network they are connected to. Then
 they should be able to inform the originating room of the event about this
-delivery error. The user in turn should be able to instruct the bridge to retry
-sending the message that was presented him as failed; the bridge should have the
-ability to mark an error as being revoked.
+delivery error.
 
 If [MSC 1410: Rich
 Bridging](https://github.com/matrix-org/matrix-doc/issues/1410) is utilized for
@@ -22,6 +19,10 @@ this proposal it would additionally give the benefits of
   separately providing these general infos about the bridge in the room state instead.
 - not requiring users representing the bridge to have admin power levels
   (see [Rights management](#rights-management)).
+
+A user might wish to reissue the delivery of her message over the previously
+failing bridge after a while. This mechanism is not part of this MSC and will be
+described separately.
 
 ### Bridge error event
 
@@ -105,100 +106,31 @@ This is an example of how the new bridge error might look:
 }
 ```
 
-### Retries and error revocation
-
-Providing a way to retry a failed message delivery gives the sender control over
-the importance of her message. An extra procedure for a retry is necessary as
-the message might have been delivered to some users (those not on the bridge)
-and this would produce duplicate messages for them.
-
-A retry request is posted by the client to the room for all bridges to see it,
-referencing the original event. By inspecting the sender of all related
-`m.bridge_error` events, under all bridges the correct one can find out that it
-is responsible. The responsible bridge re-fetches the original event and retries
-to deliver it.
-
-A successful retry should be communicated by revoking (not redacting) the
-original error that made the retry necessary. Revocation is done by an event
-with the type `m.bridge_error_revoke` which references the original event. The
-error(s) having a sender of the same bridge as the revocation event are
-considered revoked. Clients can show a revocation message e.g. as “Delivered to
-Discord at 14:52.” besides the original event.
-
-On an unsuccessful retry the bridge may edit the error's content to reflect the
-new state, e.g. because the type of error changed or to communicate the new
-time.
-
-Example of the new retry events:
-
-```
-{
-    "type": "m.bridge_retry",
-    "content": {
-        "m.relationship": {
-            "rel_type": "m.reference",
-            "event_id": "$original:event.id"
-        }
-    }
-}
-```
-
-```
-{
-    "type": "m.bridge_error_revoke",
-    "content": {
-        "m.relationship": {
-            "rel_type": "m.reference",
-            "event_id": "$original:event.id"
-        }
-    }
-}
-```
-
-Overview of the relations between the different event types:
-
-```
-                           m.references
- ________________     _____________________
-|                |   |                     |
-| Original Event |-+-|    Bridge Error     |
-|________________| | |_____________________|
-                   |  _____________________
-                   | |                     |
-                   +-|    Retry Request    |
-                   | |_____________________|
-                   |  _____________________
-                   | |                     |
-                   +-| Bridge Error Revoke |
-                     |_____________________|
-```
-
-A retry might not make much sense for every kind of error e.g. retrying
-`m.unknown_event` will probably result in the same error again. Clients may
-choose to disable retry options for those cases, but it is not restricted
-otherwise.
-
 ### Special case: Unavailable bridge
 
 In the case the bridge is down or otherwise disconnected from the homeserver, it
 naturally has no way to inform its users about the unavailability. In this case
 the homeserver can stand in as an agent for the bridge and answer requests in
-its absence.
+its absence. To not have an unlimited amount of messages waiting for the bridge
+when it comes back online, a timeout mechanism is introduced below.
 
-For this to happen, the homeserver will send out a bridge error event in the
-moment a transaction delivery to the bridge failed. The clients at this point
-will start showing an error. When the bridge comes back online it will encounter
+To show the bridge outage, the homeserver will send out a bridge error event in
+the moment a transaction delivery to the bridge failed. The clients at this
+point will start showing an error.
+
+When the bridge comes back online, it would, without further measures, encounter
 a higher-than-normal load as all events accumulated over the downtime are
 flooding in. To handle this scenario well, the bridge will want to simply
 discard all messages older than a given threshold and not bother with sending
-any answer back.
+any answer back. By including a timeout in the `time_to_permanent` field of the
+event, the client will know without further feedback from the homeserver or
+bridge when the message won't be delivered anymore.
 
-By including a timeout in the `time_to_permanent` field of the event, the client
-will know without further feedback from the homeserver or bridge when the
-message won't be delivered anymore.
-
-For those events still accepted by the bridge, the error must be revoked by a
-`m.bridge_error_revoke` as described in the previous chapter.
+For those events still accepted by the bridge, the error must be revoked.
+Revocation is done by an event with the type `m.bridge_error_revoke` which
+references the original event. The error(s) having a sender of the same bridge
+as the revocation event are considered revoked. Clients can show a revocation
+message e.g. as “Delivered to Discord at 14:52.” besides the original event.
 
 **Note:** For this to work, the homeserver is required to impersonate a user of
 the bridge as it has no agent of its own. The impersonated user would be the
