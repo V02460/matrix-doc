@@ -11,15 +11,6 @@ successfully deliver an event to the foreign network they are connected to. Then
 they should be able to inform the originating room of the event about this
 delivery error.
 
-If [MSC 1410: Rich
-Bridging](https://github.com/matrix-org/matrix-doc/issues/1410) is utilized for
-this proposal it would additionally give the benefits of
-
-- trimming the number of properties required in each bridge error event by
-  separately providing these general infos about the bridge in the room state instead.
-- not requiring users representing the bridge to have admin power levels
-  (see [Rights management](#rights-management)).
-
 A user might wish to reissue the delivery of her message over the previously
 failing bridge after a while. This mechanism is not part of this MSC and will be
 described separately.
@@ -27,14 +18,16 @@ described separately.
 ### Bridge error event
 
 This document proposes the addition of a new room event with type
-`m.bridge_error`. It is sent by the bridge and references an event previously
-sent in the same room, by that marking the original event as “failed to deliver”
-for all users of a bridge. The new event type utilizes reference aggregations
-([MSC
+`m.bridge_error`. It is sent by the bridge (or alternatively the homeserver) and
+references an event previously sent in the same room, by that marking the
+original event as “failed to deliver” for all users of a bridge. The new event
+type utilizes reference aggregations ([MSC
 1849](https://github.com/matrix-org/matrix-doc/blob/matthew/msc1849/proposals/1849-aggregations.md#relation-types))
 to establish the relation to the event its delivery it is marking as failed.
-There is no need for a new endpoint as the existing `/send` endpoint will be
-utilized.
+[MSC 2346: Bridge information state event]() is utilized to authorize the bridge
+bot to send bridge error messages and provide information about the affected
+bridge. There is no need for a new endpoint as the existing `/send` endpoint
+will be utilized.
 
 There are some common reasons why an error occurred. These are encoded in the
 `reason` attribute and can contain the following types:
@@ -102,7 +95,8 @@ This is an example of how the new bridge error might look:
             "rel_type": "m.reference",
             "event_id": "$some:event.id"
         }
-    }
+    },
+    "sender": "@discordbot:example.org"
 }
 ```
 
@@ -135,6 +129,26 @@ message e.g. as “Delivered to Discord at 14:52.” besides the original event.
 **Note:** For this to work, the homeserver is required to impersonate a user of
 the bridge as it has no agent of its own. The impersonated user would be the
 bridge bot user or one of the virtual users in the bridge's namespace.
+
+### State of bridges
+
+```
+                ____________________
+               |                    |
+               | Message reaches HS |
+               |____________________|
+                          |
+                 _________V_________    
+                /                   \
+                | Bridge reachable? |
+                \___________________/
+                       /      \
+                 Yes  /        \  No
+                     V          V
+             
+    Bridge processes message     
+```
+
 
 ### Rights management
 
@@ -204,11 +218,13 @@ messages increases the pressure.
 
 ## Security considerations
 
-When utilizing power levels instead of building on [MSC 1410: Rich
-Bridging](https://github.com/matrix-org/matrix-doc/issues/1410) a malicious user
-who has enough power to send `m.bridge_error` or `m.bridge_error_revoke` is able
-to impersonate a bridge. She will be able to wrongly mark messages as failed to
-deliver or revoke errors when they were not successfully retried.
+Everyone who has a sufficient power level (50 as per room default) can install
+and change `m.bridge` state events.
+
+This can lead to
+- False bridges
+- False user-to-bridge attribution (?currently not)
+- Users being able to send brdige errors and create the impression of unsent messages
 
 ## Conclusion
 
